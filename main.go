@@ -1,21 +1,51 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
+	"strings"
 
-	slackbot "github.com/BeepBoopHQ/go-slackbot"
 	"github.com/nlopes/slack"
 )
 
+// ref: https://rsmitty.github.io/Slack-Bot/
+// ref: https://api.slack.com/apps/A6GF0UDNC/oauth
 func main() {
-	bot := slackbot.New(os.Getenv("SLACK_TOKEN"))
-	toMe := bot.Messages(slackbot.DirectMessage, slackbot.DirectMention).Subrouter()
-	toMe.Hear("(?i)(hi|hello).*").MessageHandler(HelloHandler)
-	bot.Run()
+	token := os.Getenv("SLACK_TOKEN")
+	api := slack.New(token)
+	rtm := api.NewRTM()
 
-}
+	go rtm.ManageConnection()
 
-func HelloHandler(ctx context.Context, bot *slackbot.Bot, evt *slack.MessageEvent) {
-	bot.Reply(evt, "Oh hello!", slackbot.WithTyping)
+Loop:
+	for {
+		select {
+		case msg := <-rtm.IncomingEvents:
+			fmt.Println("Event Received: ")
+			switch ev := msg.Data.(type) {
+			case *slack.ConnectedEvent:
+				fmt.Println("Connection counter:", ev.ConnectionCount)
+
+			case *slack.MessageEvent:
+				fmt.Printf("Message: %v\n", ev)
+				info := rtm.GetInfo()
+				prefix := fmt.Sprintf("<@%s> ", info.User.ID)
+
+				if ev.User != info.User.ID && strings.HasPrefix(ev.Text, prefix) {
+					rtm.SendMessage(rtm.NewOutgoingMessage("What's up buddy!?!?", ev.Channel))
+				}
+
+			case *slack.RTMError:
+				fmt.Printf("Error: %s\n", ev.Error())
+
+			case *slack.InvalidAuthEvent:
+				fmt.Printf("Invalid credentials")
+				break Loop
+
+			default:
+				fmt.Println("nothing?")
+				//Take no action
+			}
+		}
+	}
 }
